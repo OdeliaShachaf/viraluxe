@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { FlatList, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -8,35 +9,31 @@ import { SearchBar } from '@/components/inventory/search-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { getItems } from '@/database/database';
 import { InventoryItem } from '@/types/inventory';
 
-// Mock data for the UI-only preview. Will be replaced by SQLite queries once the
-// database layer is wired up in the next step.
-const MOCK_INVENTORY: InventoryItem[] = [
-  { id: 1, itemName: 'Milk', quantity: 2, category: 'Dairy', updatedAt: '' },
-  { id: 2, itemName: 'Eggs', quantity: 0, category: 'Dairy', updatedAt: '' },
-  { id: 3, itemName: 'Bread', quantity: 1, category: 'Bakery', updatedAt: '' },
-  { id: 4, itemName: 'Rice', quantity: 4, category: 'Pantry', updatedAt: '' },
-  { id: 5, itemName: 'Olive Oil', quantity: 0, category: 'Pantry', updatedAt: '' },
-  { id: 6, itemName: 'Dish Soap', quantity: 1, category: 'Household', updatedAt: '' },
-];
-
 export function InventoryDashboardScreen() {
+  const [items, setItems] = useState<InventoryItem[]>([]);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-  const categories = useMemo(
-    () => Array.from(new Set(MOCK_INVENTORY.map((item) => item.category))),
-    [],
+  useFocusEffect(
+    useCallback(() => {
+      setItems(getItems());
+    }, []),
   );
 
+  const categories = useMemo(() => Array.from(new Set(items.map((item) => item.category))), [
+    items,
+  ]);
+
   const filteredItems = useMemo(() => {
-    return MOCK_INVENTORY.filter((item) => {
+    return items.filter((item) => {
       const matchesSearch = item.itemName.toLowerCase().includes(search.trim().toLowerCase());
       const matchesCategory = selectedCategory === null || item.category === selectedCategory;
       return matchesSearch && matchesCategory;
     });
-  }, [search, selectedCategory]);
+  }, [items, search, selectedCategory]);
 
   return (
     <ThemedView style={styles.container}>
@@ -44,7 +41,7 @@ export function InventoryDashboardScreen() {
         <ThemedView style={styles.header}>
           <ThemedText type="title">Inventory</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
-            {filteredItems.length} of {MOCK_INVENTORY.length} items
+            {filteredItems.length} of {items.length} items
           </ThemedText>
         </ThemedView>
 
@@ -62,7 +59,9 @@ export function InventoryDashboardScreen() {
           contentContainerStyle={styles.list}
           ListEmptyComponent={
             <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
-              No items match your search.
+              {items.length === 0
+                ? 'Your inventory is empty. Add items from the Adjust tab.'
+                : 'No items match your search.'}
             </ThemedText>
           }
         />
