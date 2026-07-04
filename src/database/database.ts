@@ -1,11 +1,9 @@
-import * as SQLite from 'expo-sqlite';
+import { type SQLiteDatabase } from 'expo-sqlite';
 
 import { InventoryItem, ShoppingListItem } from '@/types/inventory';
 
-const db = SQLite.openDatabaseSync('viraluxe.db');
-
-function initDatabase(): void {
-  db.execSync(`
+export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
+  await db.execAsync(`
     CREATE TABLE IF NOT EXISTS inventory (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_name TEXT NOT NULL UNIQUE,
@@ -21,8 +19,6 @@ function initDatabase(): void {
     );
   `);
 }
-
-initDatabase();
 
 type InventoryRow = {
   id: number;
@@ -59,37 +55,49 @@ function toShoppingListItem(row: ShoppingListRow): ShoppingListItem {
 }
 
 /** Keeps the shopping list in sync with an item's current quantity. */
-function syncShoppingListForItem(itemName: string, quantity: number): void {
+async function syncShoppingListForItem(
+  db: SQLiteDatabase,
+  itemName: string,
+  quantity: number,
+): Promise<void> {
   if (quantity <= 0) {
-    db.runSync(
+    await db.runAsync(
       `INSERT INTO shopping_list (item_name, suggested_quantity, status)
        VALUES (?, 1, 'pending')
        ON CONFLICT(item_name) DO UPDATE SET status = 'pending'`,
       [itemName],
     );
   } else {
-    db.runSync(`DELETE FROM shopping_list WHERE item_name = ?`, [itemName]);
+    await db.runAsync(`DELETE FROM shopping_list WHERE item_name = ?`, [itemName]);
   }
 }
 
-export function getItems(searchQuery = ''): InventoryItem[] {
-  const rows = db.getAllSync<InventoryRow>(
+export async function getItems(db: SQLiteDatabase, searchQuery = ''): Promise<InventoryItem[]> {
+  const rows = await db.getAllAsync<InventoryRow>(
     `SELECT * FROM inventory WHERE item_name LIKE ? ORDER BY item_name ASC`,
     [`%${searchQuery}%`],
   );
   return rows.map(toInventoryItem);
 }
 
-export function getItemByName(itemName: string): InventoryItem | null {
-  const row = db.getFirstSync<InventoryRow>(`SELECT * FROM inventory WHERE item_name = ?`, [
+export async function getItemByName(
+  db: SQLiteDatabase,
+  itemName: string,
+): Promise<InventoryItem | null> {
+  const row = await db.getFirstAsync<InventoryRow>(`SELECT * FROM inventory WHERE item_name = ?`, [
     itemName,
   ]);
   return row ? toInventoryItem(row) : null;
 }
 
 /** Adds stock for an item (simulating a receipt). Creates the item if it doesn't exist yet. */
-export function addItem(itemName: string, quantity: number, category: string): void {
-  db.runSync(
+export async function addItem(
+  db: SQLiteDatabase,
+  itemName: string,
+  quantity: number,
+  category: string,
+): Promise<void> {
+  await db.runAsync(
     `INSERT INTO inventory (item_name, quantity, category, updated_at)
      VALUES (?, ?, ?, datetime('now'))
      ON CONFLICT(item_name) DO UPDATE SET
@@ -98,44 +106,56 @@ export function addItem(itemName: string, quantity: number, category: string): v
        updated_at = datetime('now')`,
     [itemName, quantity, category],
   );
-  const item = getItemByName(itemName);
-  if (item) syncShoppingListForItem(itemName, item.quantity);
+  const item = await getItemByName(db, itemName);
+  if (item) await syncShoppingListForItem(db, itemName, item.quantity);
 }
 
 /** Consumes stock for an item, clamped at 0. Auto-adds it to the shopping list at 0. */
-export function decrementItem(itemName: string, amount = 1): void {
-  db.runSync(
+export async function decrementItem(
+  db: SQLiteDatabase,
+  itemName: string,
+  amount = 1,
+): Promise<void> {
+  await db.runAsync(
     `UPDATE inventory SET quantity = MAX(quantity - ?, 0), updated_at = datetime('now')
      WHERE item_name = ?`,
     [amount, itemName],
   );
-  const item = getItemByName(itemName);
-  if (item) syncShoppingListForItem(itemName, item.quantity);
+  const item = await getItemByName(db, itemName);
+  if (item) await syncShoppingListForItem(db, itemName, item.quantity);
 }
 
 /** Sets an item's quantity directly (e.g. restocking). Keeps the shopping list in sync. */
-export function updateQuantity(itemName: string, quantity: number): void {
-  db.runSync(
+export async function updateQuantity(
+  db: SQLiteDatabase,
+  itemName: string,
+  quantity: number,
+): Promise<void> {
+  await db.runAsync(
     `UPDATE inventory SET quantity = ?, updated_at = datetime('now') WHERE item_name = ?`,
     [quantity, itemName],
   );
-  syncShoppingListForItem(itemName, quantity);
+  await syncShoppingListForItem(db, itemName, quantity);
 }
 
-export function getShoppingList(): ShoppingListItem[] {
-  const rows = db.getAllSync<ShoppingListRow>(
+export async function getShoppingList(db: SQLiteDatabase): Promise<ShoppingListItem[]> {
+  const rows = await db.getAllAsync<ShoppingListRow>(
     `SELECT * FROM shopping_list WHERE status = 'pending' ORDER BY item_name ASC`,
   );
   return rows.map(toShoppingListItem);
 }
 
 /** Marks a shopping list entry as bought: removes it from the list and restocks the inventory. */
-export function markAsBought(shoppingListId: number, restockQuantity = 1): void {
-  const row = db.getFirstSync<ShoppingListRow>(`SELECT * FROM shopping_list WHERE id = ?`, [
+export async function markAsBought(
+  db: SQLiteDatabase,
+  shoppingListId: number,
+  restockQuantity = 1,
+): Promise<void> {
+  const row = await db.getFirstAsync<ShoppingListRow>(`SELECT * FROM shopping_list WHERE id = ?`, [
     shoppingListId,
   ]);
   if (!row) return;
 
-  db.runSync(`DELETE FROM shopping_list WHERE id = ?`, [shoppingListId]);
-  updateQuantity(row.item_name, restockQuantity);
+  await db.runAsync(`DELETE FROM shopping_list WHERE id = ?`, [shoppingListId]);
+  await updateQuantity(db, row.item_name, restockQuantity);
 }

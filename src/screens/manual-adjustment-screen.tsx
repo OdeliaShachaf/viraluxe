@@ -1,4 +1,5 @@
 import { useFocusEffect } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,29 +13,32 @@ import { InventoryItem } from '@/types/inventory';
 
 export function ManualAdjustmentScreen() {
   const theme = useTheme();
+  const db = useSQLiteContext();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [itemName, setItemName] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [category, setCategory] = useState('');
 
-  const refresh = useCallback(() => setItems(getItems()), []);
+  const refresh = useCallback(() => {
+    getItems(db).then(setItems);
+  }, [db]);
 
   useFocusEffect(refresh);
 
-  function handleAdd() {
+  async function handleAdd() {
     const trimmedName = itemName.trim();
     const parsedQuantity = parseInt(quantity, 10);
     if (!trimmedName || !Number.isFinite(parsedQuantity) || parsedQuantity <= 0) return;
 
-    addItem(trimmedName, parsedQuantity, category.trim());
+    await addItem(db, trimmedName, parsedQuantity, category.trim());
     setItemName('');
     setQuantity('1');
     setCategory('');
     refresh();
   }
 
-  function handleDecrement(name: string) {
-    decrementItem(name, 1);
+  async function handleDecrement(name: string) {
+    await decrementItem(db, name, 1);
     refresh();
   }
 

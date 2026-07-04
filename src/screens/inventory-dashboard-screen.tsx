@@ -1,4 +1,5 @@
 import { useFocusEffect } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useMemo, useState } from 'react';
 import { FlatList, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,14 +14,15 @@ import { getItems } from '@/database/database';
 import { InventoryItem } from '@/types/inventory';
 
 export function InventoryDashboardScreen() {
+  const db = useSQLiteContext();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      setItems(getItems());
-    }, []),
+      getItems(db).then(setItems);
+    }, [db]),
   );
 
   const categories = useMemo(() => Array.from(new Set(items.map((item) => item.category))), [

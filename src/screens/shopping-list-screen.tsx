@@ -1,4 +1,5 @@
 import { useFocusEffect } from 'expo-router';
+import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,27 +13,29 @@ import { ShoppingListItem } from '@/types/inventory';
 
 export function ShoppingListScreen() {
   const theme = useTheme();
+  const db = useSQLiteContext();
   const [pendingItems, setPendingItems] = useState<ShoppingListItem[]>([]);
   const [restockQuantities, setRestockQuantities] = useState<Record<number, string>>({});
 
   const refresh = useCallback(() => {
-    const list = getShoppingList();
-    setPendingItems(list);
-    setRestockQuantities((current) => {
-      const next: Record<number, string> = {};
-      for (const item of list) {
-        next[item.id] = current[item.id] ?? String(item.suggestedQuantity);
-      }
-      return next;
+    getShoppingList(db).then((list) => {
+      setPendingItems(list);
+      setRestockQuantities((current) => {
+        const next: Record<number, string> = {};
+        for (const item of list) {
+          next[item.id] = current[item.id] ?? String(item.suggestedQuantity);
+        }
+        return next;
+      });
     });
-  }, []);
+  }, [db]);
 
   useFocusEffect(refresh);
 
-  function handleBought(item: ShoppingListItem) {
+  async function handleBought(item: ShoppingListItem) {
     const parsedQuantity = parseInt(restockQuantities[item.id] ?? '', 10);
     const restockQuantity = Number.isFinite(parsedQuantity) && parsedQuantity > 0 ? parsedQuantity : 1;
-    markAsBought(item.id, restockQuantity);
+    await markAsBought(db, item.id, restockQuantity);
     refresh();
   }
 
